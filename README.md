@@ -111,6 +111,96 @@ ROOT_PASSWORD='VMware123!' work/scripts/run_esxi8_e2e_install_and_verify.sh
 
 ---
 
+## 稳定经验（重点，建议完整阅读）
+
+这一节总结的是“已经被反复验证可稳定复现”的做法，目标是让你下次直接按这个执行，不再重复踩坑。
+
+### A. 当前最稳定参数组合（推荐默认）
+
+- 固件：Ubuntu `AAVMF_CODE.fd`（路径：`work/firmware/ubuntu-aavmf-2022.02/AAVMF_CODE.fd`）
+- 机器参数：`virt,virtualization=off,gic-version=2`
+- 加速器：`tcg`
+- 网卡：`vmxnet3`
+- 安装目标盘总线：`usb`
+- 安装脚本默认行为：`REBOOT_ACTION=enter`（会观测重启路径）
+
+结论上，这套组合相对 `gic-version=3` 的主要改进是：安装完成后重启阶段不再触发 `its.c:2934` panic，而是能走完整 shutdown 并回跳到固件启动。
+
+### B. 安装与启动分成“两阶段”理解（非常关键）
+
+1) 安装阶段  
+- 挂载安装 payload（FAT 目录）+ 目标系统盘 + AAVMF vars  
+- 安装器会把 UEFI 启动项写入 vars（例如 `Boot0004`，也可能继续用通用 `Boot0002`）
+
+2) 已安装系统启动阶段（disk-only）  
+- 只挂载系统盘（不要再挂安装 payload）  
+- 继续使用安装阶段同一个 vars 文件  
+- 这样才会走“已安装系统”而不是回到安装器
+
+如果你在这一步换了 vars 或又把 payload 挂上，最常见现象就是“看起来又进安装器了”。
+
+### C. 一次性可交付执行模板（推荐你后续都照这个跑）
+
+```bash
+RUN_TAG=deliverable-$(date +%Y%m%d-%H%M%S) \
+ROOT_PASSWORD='VMware123!' \
+work/scripts/run_esxi8_e2e_install_and_verify.sh
+```
+
+这条命令会自动完成：
+- 自动安装（含 root 密码输入、确认安装）
+- 安装完成后触发重启并观测重启路径
+- 冷启动已安装系统并自动校验关键标志
+
+### D. 判定“成功”的硬指标（按日志看，不靠感觉）
+
+安装日志至少应满足：
+- 出现 `Installation Complete`
+- 出现 `Starting VMKernel shutdown`
+- 不出现 `its.c:2934` / `Module(s) involved in panic`
+- 最好出现 `This system has been halted` 且随后再次出现 `BdsDxe: loading Boot0002`（表示重启路径连通）
+
+启动校验日志至少应满足：
+- 出现 `Starting VMKernel`（或 `Starting VMKernel initialization`）
+- 出现 `Boot complete (2/2)`
+- 出现 `Starting service DCUI` 或 `To manage this host, go to:`
+
+项目里的 `work/scripts/check_esxi8_boot_log.py` 已把这些判据做成自动检查。
+
+### E. 常见不稳定点与对应处理
+
+1) **重启阶段 panic（历史问题）**  
+- 表现：`its.c:2934`  
+- 处理：确认机器参数是 `gic-version=2`；若仍不稳，临时使用 `REBOOT_ACTION=poweroff` 保底不阻塞交付
+
+2) **安装后又回安装器**  
+- 常见原因：仍挂着 payload，或 vars 被重建/替换  
+- 处理：disk-only 启动 + 复用安装时的 vars
+
+3) **安装器里选错盘**  
+- 常见现象：选到 504MiB 的 payload 盘，导致最小容量错误  
+- 处理：在 USB 模式下通常需要选第二块 40GiB 盘
+
+4) **HVF 偶发不稳定**  
+- 建议：交付跑批优先 `tcg`，先追求确定性
+
+5) **Boot 项名字和编号变化**  
+- `Boot0004 "VMware ESXi"` 与 `Boot0002` 都可能出现  
+- 这是可接受的，关键看是否进入已安装系统并满足 `Boot complete`/`DCUI` 判据
+
+### F. 建议保留的“最小证据集”
+
+每次交付建议保留两份日志：
+- 安装日志：`esxi8-e2e-install-<tag>.log`
+- 启动日志：`esxi8-e2e-boot-<tag>.log`
+
+并在文档里记录：
+- 当次参数（特别是 `MACHINE_OPTS`、`DISK_BUS`、`ACCEL`）
+- 是否出现 panic 关键词
+- `Boot complete (2/2)` 行号
+
+---
+
 ## 目录说明（精简）
 
 - `work/scripts/`：核心脚本（启动、补丁、验证、构建）。
