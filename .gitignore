@@ -1,0 +1,33 @@
+# macOS / editor
+.DS_Store
+*.swp
+*.swo
+
+# local Codex runtime
+.codex/
+
+# external/raw drops (very large)
+ESXI-ARM/
+
+# experiment artifacts (regenerable)
+work/iso/
+work/analysis/
+work/out/
+work/vm/
+work/firmware/
+
+# generic large binary media
+*.iso
+*.zip
+*.deb
+*.vib
+*.qcow2
+*.fd
+*.img
+*.bin
+*.v00
+*.b00
+*.tgz
+
+# logs
+*.log
