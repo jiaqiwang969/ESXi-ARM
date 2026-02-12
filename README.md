@@ -30,22 +30,14 @@ work/scripts/run_esxi8_e2e_install_and_verify.sh
 2. 在 QEMU 虚拟磁盘中完成安装；
 3. 安装后从虚拟磁盘正常启动进入已安装系统。
 
-> 说明：项目中提到的 Ubuntu/AAVMF 仅用于替换 QEMU 的 UEFI 固件文件，属于“启动链稳定性修复”，不是把目标改成“在 Ubuntu 上安装 ESXi”。
-
-## 双轨策略（Ubuntu + NixOS）
-
-- `Ubuntu` 轨道：快速实验与故障定位（试错速度优先）；
-- `NixOS` 轨道：完整独立系统环境沉淀（可复现优先）；
-- 两条轨道服务同一个终目标：**QEMU 中稳定安装并启动 ESXi ARM**。
-
-> 关键澄清：`NixOS` 不是“在当前系统装 nix 包管理器”，而是独立的完整系统（VM/裸机均可），用于固化本项目的自动化环境。
+> 说明：项目使用 AAVMF 固件（脚本从 Ubuntu `qemu-efi-aarch64` 包下载并提取）替换 QEMU 的 UEFI 固件以稳定启动链；不要求你安装/使用 Ubuntu 或 NixOS。
 
 ---
 
 ## 当前状态（截至 2026-02-12）
 
 - 已定位旧固件崩溃根因：Homebrew 自带 `edk2-aarch64-code.fd` 在 BdsDxe 阶段触发 Data Abort。
-- 已验证替换固件有效：使用 Ubuntu `qemu-efi-aarch64` 提供的 AAVMF（2022.02）后，可越过早期崩溃并进入 VMKernel 初始化。
+- 已验证替换固件有效：使用从 Ubuntu `qemu-efi-aarch64` 包提取的 AAVMF（2022.02）后，可越过早期崩溃并进入 VMKernel 初始化。
 - 已解决安装器无网卡问题：使用 `vmxnet3`。
 - 已推进到安装后半段：`Select a Disk to store ESX OSData`、`Please select a keyboard layout`、`Enter a root password`。
 - 已确认可见可安装目标盘：在 `usb` 目标盘模式下，安装器可识别第二块 40GiB USB 磁盘（第一块为启动 payload 介质）。
@@ -137,33 +129,13 @@ ROOT_PASSWORD='VMware123!' work/scripts/run_esxi8_e2e_install_and_verify.sh
 - 用途：仅用于本项目的本地/实验环境自动化验证，请勿复用于生产环境。
 - 详情：`docs/TEST_CREDENTIALS.md`
 
-## NixOS 轨道（完整系统）
-
-如果你要的是“完整 NixOS”，而不是在当前 host 装 Nix，请走这套流程：
-
-```bash
-work/scripts/fetch_aavmf_ubuntu.sh
-work/scripts/fetch_nixos_aarch64_iso.sh
-work/scripts/run_nixos_aarch64_installer.sh
-```
-
-安装完成后，启动已安装系统：
-
-```bash
-work/scripts/run_nixos_aarch64_boot_installed.sh
-```
-
-详细安装步骤与和 ESXi 主线的关系见：`docs/NIXOS_TRACK.md`。
-
----
-
 ## 稳定经验（重点，建议完整阅读）
 
 这一节总结的是“已经被反复验证可稳定复现”的做法，目标是让你下次直接按这个执行，不再重复踩坑。
 
 ### A. 当前最稳定参数组合（推荐默认）
 
-- 固件：Ubuntu `AAVMF_CODE.fd`（路径：`work/firmware/ubuntu-aavmf-2022.02/AAVMF_CODE.fd`）
+- 固件：`AAVMF_CODE.fd`（来自 Ubuntu `qemu-efi-aarch64` 包；路径：`work/firmware/ubuntu-aavmf-2022.02/AAVMF_CODE.fd`）
 - 机器参数：`virt,virtualization=off,gic-version=2`
 - 加速器：`tcg`
 - 网卡：`vmxnet3`
@@ -247,10 +219,37 @@ work/scripts/run_esxi8_e2e_install_and_verify.sh
 
 ---
 
+## 网络与 SSH（可选，macOS 推荐 vmnet-shared）
+
+本项目主线交付判据不依赖 SSH（以串口日志 + DCUI 为准），但如果你需要从宿主机通过网络访问 ESXi（HTTPS/SSH），需要注意：
+
+1) **默认脚本使用 `-netdev user`（SLIRP）**  
+ESXi 通常能拿到 `10.0.2.x` 的 DHCP 地址并正常启动，但在一些环境里，`hostfwd` 入站连接会表现为 **SSH/HTTPS 超时**（看起来像“网络不通”）。
+
+2) **推荐方案：macOS 使用 `vmnet-shared` 给 ESXi 分配真实局域网 IP**  
+这会在宿主机创建 `bridge100`（通常为 `192.168.2.0/24`），ESXi 通过 DHCP 获取 `192.168.2.x`，随后宿主机可直接 `ssh root@<ip>` / `https://<ip>/`，无需端口转发。
+
+> 注意：`vmnet-shared` 通常需要 root 权限（`sudo`）才能创建 vmnet 接口。
+
+快速用法（已安装系统盘启动）：
+
+```bash
+# 后台启动（推荐）：创建 monitor/serial unix socket，便于后续自动化 sendkey
+sudo work/scripts/run_esxi8_boot_installed_vmnet.sh --bg work/vm/esxi-install-e2e.qcow2
+
+# 一键：启动 -> 自动发现 IP（按 MAC）-> 尝试用 sendkey 打开 DCUI 里的 SSH -> 写 env
+sudo ROOT_PASSWORD='VMware123!' work/scripts/esxi_vmnet_bootstrap.sh
+
+# 加载连接信息
+source work/vm/esxi_info.env
+ssh root@"$ESXI_IP"
+```
+
+如需手动开启 SSH：DCUI `F2 -> root 登录 -> Troubleshooting Options -> Enable SSH`。
+
 ## 目录说明（精简）
 
 - `work/scripts/`：核心脚本（启动、补丁、验证、构建）。
-- `work/nixos/`：NixOS 轨道的配置模板（用于“完整系统”沉淀）。
 - `docs/`：进展文档、关键结论、仓库策略。
 - `work/` 其他目录：本地大体积实验产物（ISO、固件、镜像、日志、payload 等），默认不纳入 Git。
 

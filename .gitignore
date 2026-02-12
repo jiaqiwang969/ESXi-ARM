@@ -6,6 +6,9 @@
 # local Codex runtime
 .codex/
 
+# local tool artifacts
+.entire/
+
 # external/raw drops (very large)
 ESXI-ARM/
 
