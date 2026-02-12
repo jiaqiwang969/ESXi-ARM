@@ -2,6 +2,26 @@
 
 在 QEMU 中推进 ESXi on Arm（ESXi ARM）安装与启动验证。
 
+## TL;DR（稳定复现，一条龙）
+
+一次性准备（只需做一次）：
+
+```bash
+work/scripts/fetch_aavmf_ubuntu.sh
+```
+
+端到端交付验证（安装 + 安装器重启观测 + 冷启动校验）：
+
+```bash
+RUN_TAG=deliverable-$(date +%Y%m%d-%H%M%S) \
+ROOT_PASSWORD='VMware123!' \
+work/scripts/run_esxi8_e2e_install_and_verify.sh
+```
+
+说明：
+- 默认稳定参数：`ACCEL=tcg`、`MACHINE_OPTS=virt,virtualization=off,gic-version=2`、`vmxnet3`、`DISK_BUS=usb`
+- 若你的环境仍出现重启不稳定，可用保底：`REBOOT_ACTION=poweroff`
+
 ## 项目目标（明确）
 
 本项目的唯一目标是：
