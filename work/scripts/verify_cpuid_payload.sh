@@ -30,10 +30,43 @@ trap cleanup EXIT
 
 gzip -dc "$K_B00" > "$TMP_BIN"
 
-B1=$(xxd -p -l 4 -s $((0x31963c)) "$TMP_BIN")
-B2=$(xxd -p -l 4 -s $((0x319690)) "$TMP_BIN")
+hex_at_offset() {
+  python3 - "$1" "$2" <<'PY'
+import sys
 
-echo "K.B00 sha256: $(shasum -a 256 "$K_B00" | awk '{print $1}')"
+path = sys.argv[1]
+off = int(sys.argv[2], 0)
+with open(path, "rb") as f:
+    f.seek(off)
+    b = f.read(4)
+print(b.hex())
+PY
+}
+
+B1=$(hex_at_offset "$TMP_BIN" 0x31963c)
+B2=$(hex_at_offset "$TMP_BIN" 0x319690)
+
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    python3 - "$1" <<'PY'
+import hashlib
+import sys
+
+path = sys.argv[1]
+h = hashlib.sha256()
+with open(path, "rb") as f:
+    for chunk in iter(lambda: f.read(1024 * 1024), b""):
+        h.update(chunk)
+print(h.hexdigest())
+PY
+  fi
+}
+
+echo "K.B00 sha256: $(sha256_file "$K_B00")"
 echo "Offset 0x31963c: $B1"
 echo "Offset 0x319690: $B2"
 

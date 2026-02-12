@@ -23,6 +23,7 @@
 14. 通过参数回归确认：`MACHINE_OPTS=virt,virtualization=off,gic-version=2` 下，安装器重启路径可完成 `VMK shutdown(43/43)`、出现 `This system has been halted` 并回到 `BdsDxe`，未再出现 `its.c:2934`。
 15. 已完成 `gic-version=2` + `REBOOT_ACTION=enter` 的端到端交付验证（安装、重启路径观测、冷启动校验均通过）。
 16. 已固化测试凭据文档（`docs/TEST_CREDENTIALS.md`），确保后续回归时密码可追溯。
+17. 已新增 NixOS 完整系统轨道脚本与文档（`fetch_nixos_aarch64_iso.sh`、`run_nixos_aarch64_installer.sh`、`run_nixos_aarch64_boot_installed.sh`、`docs/NIXOS_TRACK.md`），用于构建独立可复现控制面。
 
 ## 关键证据（日志）
 

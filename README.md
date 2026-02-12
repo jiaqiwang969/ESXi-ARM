@@ -32,6 +32,14 @@ work/scripts/run_esxi8_e2e_install_and_verify.sh
 
 > 说明：项目中提到的 Ubuntu/AAVMF 仅用于替换 QEMU 的 UEFI 固件文件，属于“启动链稳定性修复”，不是把目标改成“在 Ubuntu 上安装 ESXi”。
 
+## 双轨策略（Ubuntu + NixOS）
+
+- `Ubuntu` 轨道：快速实验与故障定位（试错速度优先）；
+- `NixOS` 轨道：完整独立系统环境沉淀（可复现优先）；
+- 两条轨道服务同一个终目标：**QEMU 中稳定安装并启动 ESXi ARM**。
+
+> 关键澄清：`NixOS` 不是“在当前系统装 nix 包管理器”，而是独立的完整系统（VM/裸机均可），用于固化本项目的自动化环境。
+
 ---
 
 ## 当前状态（截至 2026-02-12）
@@ -129,6 +137,24 @@ ROOT_PASSWORD='VMware123!' work/scripts/run_esxi8_e2e_install_and_verify.sh
 - 用途：仅用于本项目的本地/实验环境自动化验证，请勿复用于生产环境。
 - 详情：`docs/TEST_CREDENTIALS.md`
 
+## NixOS 轨道（完整系统）
+
+如果你要的是“完整 NixOS”，而不是在当前 host 装 Nix，请走这套流程：
+
+```bash
+work/scripts/fetch_aavmf_ubuntu.sh
+work/scripts/fetch_nixos_aarch64_iso.sh
+work/scripts/run_nixos_aarch64_installer.sh
+```
+
+安装完成后，启动已安装系统：
+
+```bash
+work/scripts/run_nixos_aarch64_boot_installed.sh
+```
+
+详细安装步骤与和 ESXi 主线的关系见：`docs/NIXOS_TRACK.md`。
+
 ---
 
 ## 稳定经验（重点，建议完整阅读）
@@ -224,6 +250,7 @@ work/scripts/run_esxi8_e2e_install_and_verify.sh
 ## 目录说明（精简）
 
 - `work/scripts/`：核心脚本（启动、补丁、验证、构建）。
+- `work/nixos/`：NixOS 轨道的配置模板（用于“完整系统”沉淀）。
 - `docs/`：进展文档、关键结论、仓库策略。
 - `work/` 其他目录：本地大体积实验产物（ISO、固件、镜像、日志、payload 等），默认不纳入 Git。
 
