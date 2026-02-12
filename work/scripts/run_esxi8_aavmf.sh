@@ -14,9 +14,11 @@ AAVMF_VARS_TEMPLATE=${AAVMF_VARS_TEMPLATE:-"$ROOT_DIR/firmware/ubuntu-aavmf-2022
 AAVMF_VARS_RUNTIME=${AAVMF_VARS_RUNTIME:-"$ROOT_DIR/vm/AAVMF_VARS-esxi8.fd"}
 
 ACCEL=${ACCEL:-tcg}
+MACHINE_OPTS=${MACHINE_OPTS:-virt,virtualization=off,gic-version=2}
 RAM_MB=${RAM_MB:-8192}
 CPUS=${CPUS:-4}
 DISK_SIZE=${DISK_SIZE:-80G}
+DISK_BUS=${DISK_BUS:-usb}
 
 if [[ ! -d "$PAYLOAD_DIR" ]]; then
   echo "ERROR: payload dir not found: $PAYLOAD_DIR" >&2
@@ -57,16 +59,32 @@ else
   CPU_MODEL=${CPU_MODEL:-max}
 fi
 
+case "$DISK_BUS" in
+  nvme)
+    DISK_DEVICE_ARGS=(-device nvme,serial=esxiinstall,drive=esxidisk)
+    ;;
+  usb)
+    # Attach a second USB disk (separate from installer payload USB) for install target.
+    DISK_DEVICE_ARGS=(-device usb-storage,bus=xhci.0,drive=esxidisk)
+    ;;
+  *)
+    echo "ERROR: unsupported DISK_BUS='$DISK_BUS' (supported: usb, nvme)" >&2
+    exit 2
+    ;;
+esac
+
 echo "Payload:      $PAYLOAD_DIR"
 echo "Disk:         $DISK_IMG"
+echo "Disk bus:     $DISK_BUS"
 echo "Firmware:     $AAVMF_CODE"
 echo "Vars:         $AAVMF_VARS_RUNTIME"
 echo "Accel/CPU:    $ACCEL / $CPU_MODEL"
+echo "Machine:      $MACHINE_OPTS"
 echo "RAM/CPUs:     ${RAM_MB}MB / $CPUS"
 
 exec qemu-system-aarch64 \
   -accel "$ACCEL" \
-  -machine virt,virtualization=off,gic-version=3 \
+  -machine "$MACHINE_OPTS" \
   -cpu "$CPU_MODEL" \
   -smp "$CPUS" \
   -m "$RAM_MB" \
@@ -74,7 +92,7 @@ exec qemu-system-aarch64 \
   -drive if=none,id=esxiboot,format=raw,file=fat:rw:"$PAYLOAD_DIR" \
   -device usb-storage,bus=xhci.0,drive=esxiboot,bootindex=0 \
   -drive if=none,id=esxidisk,file="$DISK_IMG",format=qcow2 \
-  -device nvme,serial=esxiinstall,drive=esxidisk \
+  "${DISK_DEVICE_ARGS[@]}" \
   -netdev user,id=net0 \
   -device vmxnet3,netdev=net0,mac=52:54:00:12:34:56 \
   -drive if=pflash,format=raw,readonly=on,file="$AAVMF_CODE" \
